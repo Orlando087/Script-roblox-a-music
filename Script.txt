@@ -1,0 +1,933 @@
+--================= CONFIG DASH NORMAL =================
+local DASH_DURATION = 0.35
+local DASH_COOLDOWN = 1
+local DASH_FORCE = 80
+local NORMAL_WALKSPEED = 16
+
+--// ================= CONFIG FURIA =================
+local FURY_WALKSPEED = 46
+local FURY_DASH_DURATION = 0.15
+local FURY_DASH_COOLDOWN = 0.4
+local FURY_DASH_FORCE = 110
+local FURY_TIME = 134  -- 2:14 minutos
+local FURY_COOLDOWN = 20
+
+--// ================= CONFIGURACIÓN MP3 PERSONAL =================
+local mp3Url = "https://raw.githubusercontent.com/Orlando087/Script-roblox-a-music/main/G4M3-0V3R!!1.mp3"
+local fileName = "G4M3-0V3R!!1.mp3"
+
+--// ================= CONFIGURACIÓN SONIDO T =================
+local T_SOUND_ID = 9115047374
+local T_SOUND_VOLUME = 2
+local T_SOUND_COOLDOWN = 1
+
+--// ================= CONFIG VISUALIZADOR CON FOV DINÁMICO =================
+local VISUALIZER_ENABLED = true
+local VISUALIZER_NUM_BARS = 60
+local VISUALIZER_COLOR = Color3.fromRGB(255, 40, 40)
+local VISUALIZER_TRANSPARENCY = 0.4
+local VISUALIZER_CORNER_RADIUS = 12
+local VISUALIZER_STROKE_THICKNESS = 2
+local VISUALIZER_PLAYBACK_SPEED = 1.0
+
+--// ================= CONFIG FOV DINÁMICO =================
+local FOV_ENABLED = true
+local FOV_BASE = 70
+local FOV_MAX_INCREASE = 35
+local FOV_SMOOTHING = 0.3
+
+--// ================= CONFIGURACIÓN SISTEMA PUÑO =================
+local PUNCH_ENABLED = true
+local PUNCH_ANIMATION_ID = 243827693
+local PUNCH_SOUND_ID = 139988796627198
+-- Múltiples sonidos de impacto aleatorios
+local PUNCH_HIT_SOUNDS = {
+    130195042316730,  -- Sonido de impacto 1
+    139833962157504,        -- Sonido de impacto 2
+    139795256698131,        -- Sonido de impacto 3
+    136374598719661,       -- Sonido de impacto 4
+    139697578472716,       -- Sonido de impacto 5
+    80974877810808,       -- Sonido de impacto 6
+    123793447531520,       -- Sonido de impacto 7
+    112474492525355,       -- Sonido de impacto 8
+}
+local PUNCH_VOLUME = 2.5
+local PUNCH_RANGE = 4
+local PUNCH_COOLDOWN = 2.5
+
+--// ================= CONFIGURACIÓN TARGETS =================
+local Targets = {"All"} -- "All", "Target Name", "arian_was_here"
+local HIGHLIGHT_COLOR = Color3.fromRGB(255, 0, 0) -- Color rojo para el highlight
+local HIGHLIGHT_TRANSPARENCY = 0.5
+
+--// ================= TUS IDS DE DASH =================
+local Animations = {
+	DashLeft = 176223120,
+	DashRight = 77319318,
+	DashForward = 218508052,
+	DashBack = 169638954
+}
+
+--// ================= SONIDOS =================
+local DASH_SOUND_ID = 145486992
+
+local VOICE_SOUNDS = {
+	1146556706,
+	1146556975,
+	1146556975
+}
+
+local DASH_VOLUME = 1.5
+local VOICE_VOLUME = 2
+local MUSIC_VOLUME = 2
+
+--// ================= SERVICIOS =================
+local UIS = game:GetService("UserInputService")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local SoundService = game:GetService("SoundService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local player = Players.LocalPlayer
+local char = player.Character or player.CharacterAdded:Wait()
+local humanoid = char:WaitForChild("Humanoid")
+local root = char:WaitForChild("HumanoidRootPart")
+local camera = workspace.CurrentCamera
+
+--// ================= ESTADOS =================
+local canDash = true
+local isFury = false
+local furyReady = true
+local canUseTSound = true
+local currentAnim
+local furyMusic = nil
+local visualizerGui = nil
+local visualizerBars = {}
+local isVisualizerActive = false
+local visualizerConnection = nil
+
+--// ================= VARIABLES FOV =================
+local currentFOV = FOV_BASE
+local targetFOV = FOV_BASE
+
+--// ================= VARIABLES SISTEMA PUÑO =================
+local isPunchActive = false
+local punchAnimTrack = nil
+local lastPunchTime = 0
+local punchHitConnection = nil
+local originalPosition = nil
+local originalFPDH = nil
+
+--// ================= SISTEMA VISUALIZADOR CON PLAYBACKLOUDNESS =================
+local function createMusicVisualizer()
+    if not VISUALIZER_ENABLED then return end
+    
+    print("[Visualizador] 🎵 Creando visualizador con PlaybackLoudness...")
+    
+    if visualizerGui then
+        visualizerGui:Destroy()
+        visualizerGui = nil
+        visualizerBars = {}
+    end
+    
+    if visualizerConnection then
+        visualizerConnection:Disconnect()
+        visualizerConnection = nil
+    end
+    
+    visualizerGui = Instance.new("ScreenGui")
+    visualizerGui.Name = "FullScreenVisualizer"
+    visualizerGui.IgnoreGuiInset = true
+    visualizerGui.ResetOnSpawn = false
+    visualizerGui.Enabled = false
+    visualizerGui.Parent = player:WaitForChild("PlayerGui")
+    
+    local container = Instance.new("Frame")
+    container.Size = UDim2.new(1, 0, 1, 0)
+    container.Position = UDim2.new(0, 0, 0, 0)
+    container.BackgroundTransparency = 1
+    container.Parent = visualizerGui
+    
+    local spacing = 1 / VISUALIZER_NUM_BARS
+    visualizerBars = {}
+    
+    for i = 1, VISUALIZER_NUM_BARS do
+        local bar = Instance.new("Frame")
+        bar.AnchorPoint = Vector2.new(0, 1)
+        bar.Size = UDim2.new(spacing * 0.7, 0, 0.1, 0)
+        bar.Position = UDim2.new((i - 1) * spacing, 0, 1, 0)
+        bar.BorderSizePixel = 0
+        bar.BackgroundColor3 = VISUALIZER_COLOR
+        bar.BackgroundTransparency = VISUALIZER_TRANSPARENCY
+        
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0, VISUALIZER_CORNER_RADIUS)
+        corner.Parent = bar
+        
+        local stroke = Instance.new("UIStroke")
+        stroke.Thickness = VISUALIZER_STROKE_THICKNESS
+        stroke.Transparency = 0.5
+        stroke.Color = VISUALIZER_COLOR
+        stroke.Parent = bar
+        
+        bar.Parent = container
+        table.insert(visualizerBars, bar)
+    end
+    
+    print("[Visualizador] ✅ " .. VISUALIZER_NUM_BARS .. " barras creadas")
+    return visualizerGui
+end
+
+local function updateVisualizerWithAudio()
+    if not isVisualizerActive or not visualizerGui or not visualizerGui.Enabled then 
+        return 
+    end
+    
+    if furyMusic and furyMusic.IsPlaying then
+        local loudness = furyMusic.PlaybackLoudness / 1000
+        local speedFactor = furyMusic.PlaybackSpeed or VISUALIZER_PLAYBACK_SPEED
+        local time = tick()
+        
+        local totalHeight = 0
+        local maxBarHeight = 0
+        
+        for i, bar in ipairs(visualizerBars) do
+            local offset = math.sin((time * 2) + i * 0.5)
+            local variation = math.noise(time * 1.2 + i * 0.3) * 0.5 + 0.5
+            
+            local positionFactor = 0.5 + (i / VISUALIZER_NUM_BARS) * 1.0
+            
+            local height = math.clamp(
+                loudness * (0.8 + variation + offset * 0.3) * positionFactor * speedFactor, 
+                0.05, 0.95
+            )
+            
+            totalHeight = totalHeight + height
+            if height > maxBarHeight then
+                maxBarHeight = height
+            end
+            
+            bar.Size = UDim2.new(bar.Size.X.Scale, 0, height, 0)
+            bar.Position = UDim2.new(bar.Position.X.Scale, 0, 1, 0)
+            
+            local audioIntensity = math.clamp(loudness * 2, 0.2, 1.0)
+            bar.BackgroundTransparency = VISUALIZER_TRANSPARENCY + (1 - audioIntensity) * 0.3
+            
+            local colorIntensity = 0.7 + audioIntensity * 0.3
+            bar.BackgroundColor3 = Color3.fromRGB(
+                math.floor(VISUALIZER_COLOR.R * 255 * colorIntensity),
+                math.floor(VISUALIZER_COLOR.G * 255 * colorIntensity * 0.8),
+                math.floor(VISUALIZER_COLOR.B * 255 * colorIntensity * 0.8)
+            )
+        end
+        
+        if FOV_ENABLED and camera and isFury then
+            local averageHeight = totalHeight / #visualizerBars
+            local fovIncrease = (averageHeight - 0.05) / 0.9 * FOV_MAX_INCREASE
+            fovIncrease = math.clamp(fovIncrease, 0, FOV_MAX_INCREASE)
+            
+            targetFOV = FOV_BASE + fovIncrease
+            currentFOV = currentFOV + (targetFOV - currentFOV) * FOV_SMOOTHING
+            camera.FieldOfView = currentFOV
+        end
+    end
+end
+
+local function startVisualizer()
+    if not VISUALIZER_ENABLED then return end
+    
+    if not visualizerGui then
+        createMusicVisualizer()
+    end
+    
+    visualizerGui.Enabled = true
+    isVisualizerActive = true
+    
+    print("[Visualizador] ▶️ Activado con FOV dinámico")
+    
+    visualizerConnection = RunService.RenderStepped:Connect(function(dt)
+        updateVisualizerWithAudio()
+    end)
+end
+
+local function stopVisualizer()
+    isVisualizerActive = false
+    
+    if visualizerConnection then
+        visualizerConnection:Disconnect()
+        visualizerConnection = nil
+    end
+    
+    if visualizerGui then
+        visualizerGui.Enabled = false
+    end
+    
+    if FOV_ENABLED and camera then
+        camera.FieldOfView = FOV_BASE
+        currentFOV = FOV_BASE
+        targetFOV = FOV_BASE
+    end
+    
+    print("[Visualizador] ⏹️ Desactivado")
+end
+
+--// ================= FUNCIÓN PARA TU MP3 PERSONAL =================
+local function loadAndPlayCustomMusic()
+    print("[Música] 🎵 Descargando y reproduciendo tu MP3...")
+    
+    local mp3Data = game:HttpGet(mp3Url)
+    writefile(fileName, mp3Data)
+    
+    local sound = Instance.new("Sound")
+    sound.SoundId = getcustomasset(fileName)
+    sound.Volume = MUSIC_VOLUME
+    sound.Looped = true
+    sound.PlaybackSpeed = VISUALIZER_PLAYBACK_SPEED
+    sound.Parent = SoundService
+    sound:Play()
+    
+    print("[Música] ✅ Reproduciendo: " .. fileName)
+    
+    if VISUALIZER_ENABLED then
+        task.wait(0.3)
+        startVisualizer()
+    end
+    
+    return sound
+end
+
+local function stopFuryMusic()
+    stopVisualizer()
+    
+	if furyMusic then
+		furyMusic:Stop()
+		furyMusic:Destroy()
+		furyMusic = nil
+	end
+end
+
+--// ================= FUNCIÓN SONIDO T =================
+local function playTSound()
+    if not canUseTSound then return end
+    canUseTSound = false
+    
+    print("[Sistema] 🔊 Sonido T")
+    
+    local sound = Instance.new("Sound")
+    sound.SoundId = "rbxassetid://159882303"
+    sound.Volume = T_SOUND_VOLUME
+    sound.Parent = root
+    sound:Play()
+    
+    game:GetService("Debris"):AddItem(sound, 5)
+    
+    task.wait(T_SOUND_COOLDOWN)
+    canUseTSound = true
+end
+
+--// ================= SISTEMA DE HIGHLIGHT =================
+local function addHighlightToTarget(targetChar)
+    -- Remover highlight existente si hay
+    for _, child in ipairs(targetChar:GetChildren()) do
+        if child:IsA("Highlight") then
+            child:Destroy()
+        end
+    end
+    
+    -- Crear nuevo highlight
+    local highlight = Instance.new("Highlight")
+    highlight.Parent = targetChar
+    highlight.FillColor = HIGHLIGHT_COLOR
+    highlight.FillTransparency = HIGHLIGHT_TRANSPARENCY
+    highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+    highlight.OutlineTransparency = 0.3
+    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    
+    -- Destruir highlight después de 2 segundos
+    task.wait(2)
+    if highlight and highlight.Parent then
+        highlight:Destroy()
+    end
+end
+
+--// ================= FUNCIÓN GET PLAYER =================
+local GetPlayer = function(Name)
+    Name = Name:lower()
+    if Name == "all" or Name == "others" then
+        return "all"
+    elseif Name == "random" then
+        local GetPlayers = Players:GetPlayers()
+        for i, v in ipairs(GetPlayers) do
+            if v == player then
+                table.remove(GetPlayers, i)
+                break
+            end
+        end
+        return GetPlayers[math.random(#GetPlayers)]
+    else
+        for _, x in next, Players:GetPlayers() do
+            if x ~= player then
+                if x.Name:lower():match("^" .. Name) then
+                    return x
+                elseif x.DisplayName:lower():match("^" .. Name) then
+                    return x
+                end
+            end
+        end
+    end
+    return nil
+end
+
+--// ================= SISTEMA DE FLING MEJORADO (SIN CAMBIO DE CÁMARA) =================
+local function SkidFling(TargetPlayer)
+    if not TargetPlayer or not TargetPlayer.Character then return end
+    
+    local Character = player.Character
+    local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
+    local RootPart = Humanoid and Humanoid.RootPart
+    
+    if not Character or not Humanoid or not RootPart then return end
+    
+    -- Guardar posición original
+    if not originalPosition then
+        originalPosition = RootPart.CFrame
+    end
+    
+    -- Guardar FallenPartsDestroyHeight original
+    if not originalFPDH then
+        originalFPDH = workspace.FallenPartsDestroyHeight
+    end
+    
+    local TCharacter = TargetPlayer.Character
+    if not TCharacter then return end
+    
+    local THumanoid = TCharacter:FindFirstChildOfClass("Humanoid")
+    local TRootPart = THumanoid and THumanoid.RootPart
+    local THead = TCharacter:FindFirstChild("Head")
+    local Accessory = TCharacter:FindFirstChildOfClass("Accessory")
+    local Handle = Accessory and Accessory:FindFirstChild("Handle")
+    
+    if not THumanoid or THumanoid.Health <= 0 then return end
+    
+    -- Agregar highlight al objetivo (pero SIN cambiar cámara)
+    addHighlightToTarget(TCharacter)
+    
+    -- Función de posicionamiento
+    local FPos = function(BasePart, Pos, Ang)
+        RootPart.CFrame = CFrame.new(BasePart.Position) * Pos * Ang
+        Character:SetPrimaryPartCFrame(CFrame.new(BasePart.Position) * Pos * Ang)
+        RootPart.Velocity = Vector3.new(9e7, 9e7 * 10, 9e7)
+        RootPart.RotVelocity = Vector3.new(9e8, 9e8, 9e8)
+    end
+    
+    -- Función principal de fling
+    local SFBasePart = function(BasePart)
+        local TimeToWait = 2
+        local Time = tick()
+        local Angle = 0
+        
+        repeat
+            if RootPart and THumanoid then
+                if BasePart.Velocity.Magnitude < 50 then
+                    Angle = Angle + 100
+                    
+                    FPos(BasePart, CFrame.new(0, 1.5, 0) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0))
+                    task.wait()
+                    
+                    FPos(BasePart, CFrame.new(0, -1.5, 0) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0))
+                    task.wait()
+                    
+                    FPos(BasePart, CFrame.new(2.25, 1.5, -2.25) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0))
+                    task.wait()
+                    
+                    FPos(BasePart, CFrame.new(-2.25, -1.5, 2.25) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0))
+                    task.wait()
+                    
+                    FPos(BasePart, CFrame.new(0, 1.5, 0) + THumanoid.MoveDirection, CFrame.Angles(math.rad(Angle), 0, 0))
+                    task.wait()
+                    
+                    FPos(BasePart, CFrame.new(0, -1.5, 0) + THumanoid.MoveDirection, CFrame.Angles(math.rad(Angle), 0, 0))
+                    task.wait()
+                else
+                    FPos(BasePart, CFrame.new(0, 1.5, THumanoid.WalkSpeed), CFrame.Angles(math.rad(90), 0, 0))
+                    task.wait()
+                    
+                    FPos(BasePart, CFrame.new(0, -1.5, -THumanoid.WalkSpeed), CFrame.Angles(0, 0, 0))
+                    task.wait()
+                    
+                    FPos(BasePart, CFrame.new(0, 1.5, THumanoid.WalkSpeed), CFrame.Angles(math.rad(90), 0, 0))
+                    task.wait()
+                    
+                    FPos(BasePart, CFrame.new(0, 1.5, TRootPart.Velocity.Magnitude / 1.25), CFrame.Angles(math.rad(90), 0, 0))
+                    task.wait()
+                    
+                    FPos(BasePart, CFrame.new(0, -1.5, -TRootPart.Velocity.Magnitude / 1.25), CFrame.Angles(0, 0, 0))
+                    task.wait()
+                    
+                    FPos(BasePart, CFrame.new(0, 1.5, TRootPart.Velocity.Magnitude / 1.25), CFrame.Angles(math.rad(90), 0, 0))
+                    task.wait()
+                    
+                    FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(math.rad(90), 0, 0))
+                    task.wait()
+                    
+                    FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(0, 0, 0))
+                    task.wait()
+                    
+                    FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(math.rad(-90), 0, 0))
+                    task.wait()
+                    
+                    FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(0, 0, 0))
+                    task.wait()
+                end
+            else
+                break
+            end
+        until BasePart.Velocity.Magnitude > 500 or 
+              BasePart.Parent ~= TCharacter or 
+              TargetPlayer.Parent ~= Players or 
+              not TargetPlayer.Character == TCharacter or 
+              THumanoid.Sit or 
+              Humanoid.Health <= 0 or 
+              tick() > Time + TimeToWait
+    end
+    
+    -- Configurar para fling
+    workspace.FallenPartsDestroyHeight = 0/0
+    
+    local BV = Instance.new("BodyVelocity")
+    BV.Name = "EpixVel"
+    BV.Parent = RootPart
+    BV.Velocity = Vector3.new(9e8, 9e8, 9e8)
+    BV.MaxForce = Vector3.new(1/0, 1/0, 1/0)
+    
+    Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
+    
+    -- Ejecutar fling
+    if TRootPart and THead then
+        if (TRootPart.CFrame.p - THead.CFrame.p).Magnitude > 5 then
+            SFBasePart(THead)
+        else
+            SFBasePart(TRootPart)
+        end
+    elseif TRootPart and not THead then
+        SFBasePart(TRootPart)
+    elseif not TRootPart and THead then
+        SFBasePart(THead)
+    elseif not TRootPart and not THead and Accessory and Handle then
+        SFBasePart(Handle)
+    end
+    
+    -- Limpiar
+    BV:Destroy()
+    Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
+    
+    -- Regresar a la posición original
+    if originalPosition then
+        repeat
+            RootPart.CFrame = originalPosition * CFrame.new(0, 0.5, 0)
+            Character:SetPrimaryPartCFrame(originalPosition * CFrame.new(0, 0.5, 0))
+            Humanoid:ChangeState("GettingUp")
+            for _, x in ipairs(Character:GetChildren()) do
+                if x:IsA("BasePart") then
+                    x.Velocity, x.RotVelocity = Vector3.new(), Vector3.new()
+                end
+            end
+            task.wait()
+        until (RootPart.Position - originalPosition.p).Magnitude < 25
+    end
+    
+    -- Restaurar FallenPartsDestroyHeight
+    if originalFPDH then
+        workspace.FallenPartsDestroyHeight = originalFPDH
+    end
+end
+
+--// ================= SISTEMA PUÑO CON FLING Y SONIDOS ALEATORIOS =================
+local function playPunchSound(soundId, volume)
+    local sound = Instance.new("Sound")
+    sound.SoundId = "rbxassetid://" .. tostring(soundId)
+    sound.Volume = volume or PUNCH_VOLUME
+    sound.Parent = root
+    sound:Play()
+    game:GetService("Debris"):AddItem(sound, 2)
+end
+
+-- Función para reproducir sonido de impacto aleatorio
+local function playRandomHitSound()
+    local randomSoundId = PUNCH_HIT_SOUNDS[math.random(1, #PUNCH_HIT_SOUNDS)]
+    local sound = Instance.new("Sound")
+    sound.SoundId = "rbxassetid://" .. tostring(randomSoundId)
+    sound.Volume = PUNCH_VOLUME
+    sound.Parent = root
+    sound:Play()
+    game:GetService("Debris"):AddItem(sound, 2)
+    print("[Puño] 🔊 Sonido de impacto aleatorio: " .. randomSoundId)
+end
+
+local function getNearestTarget()
+    local nearest = nil
+    local nearestDistance = PUNCH_RANGE
+    
+    -- Verificar targets configurados
+    local targetPlayers = {}
+    
+    if Targets[1] == "All" then
+        -- Tomar todos los jugadores excepto el local
+        for _, otherPlayer in ipairs(Players:GetPlayers()) do
+            if otherPlayer ~= player then
+                table.insert(targetPlayers, otherPlayer)
+            end
+        end
+    else
+        -- Buscar targets específicos
+        for _, targetName in ipairs(Targets) do
+            local targetPlayer = GetPlayer(targetName)
+            if targetPlayer and targetPlayer ~= player and targetPlayer ~= "all" then
+                table.insert(targetPlayers, targetPlayer)
+            end
+        end
+    end
+    
+    -- Encontrar el más cercano
+    for _, targetPlayer in ipairs(targetPlayers) do
+        local otherChar = targetPlayer.Character
+        if otherChar and otherChar:FindFirstChild("HumanoidRootPart") and otherChar:FindFirstChild("Humanoid") then
+            local otherRoot = otherChar.HumanoidRootPart
+            local distance = (root.Position - otherRoot.Position).Magnitude
+            
+            if distance < nearestDistance and otherChar.Humanoid.Health > 0 then
+                nearestDistance = distance
+                nearest = targetPlayer
+            end
+        end
+    end
+    
+    return nearest
+end
+
+local function performPunch()
+    if not isPunchActive then return end
+    
+    local currentTime = tick()
+    if currentTime - lastPunchTime < PUNCH_COOLDOWN then return end
+    
+    -- Buscar objetivo
+    local targetPlayer = getNearestTarget()
+    
+    if not targetPlayer then
+        print("[Puño] 🎯 No hay objetivo cerca")
+        return
+    end
+    
+    -- Reproducir animación de puño
+    local punchAnim = Instance.new("Animation")
+    punchAnim.AnimationId = "rbxassetid://" .. PUNCH_ANIMATION_ID
+    punchAnimTrack = humanoid:LoadAnimation(punchAnim)
+    punchAnimTrack:Play()
+    
+    -- Sonido de puño
+    playPunchSound(PUNCH_SOUND_ID, PUNCH_VOLUME)
+    
+    -- Esperar para sincronizar impacto
+    task.wait(0.15)
+    
+    -- Verificar si el objetivo sigue existiendo
+    if targetPlayer.Character and targetPlayer.Character:FindFirstChild("Humanoid") and targetPlayer.Character.Humanoid.Health > 0 then
+        -- Reproducir sonido de impacto ALEATORIO
+        playRandomHitSound()
+        
+        print("[Puño] 💥 Golpe a " .. targetPlayer.Name .. " - Iniciando fling")
+        
+        -- Ejecutar fling con highlight (SIN cambiar cámara)
+        SkidFling(targetPlayer)
+    else
+        print("[Puño] ❌ El objetivo ya no es válido")
+    end
+    
+    -- Esperar a que termine la animación
+    task.wait(0.25)
+    if punchAnimTrack then
+        punchAnimTrack:Stop()
+        punchAnimTrack = nil
+    end
+    
+    lastPunchTime = currentTime
+end
+
+local function activatePunch()
+    if isPunchActive then
+        -- Desactivar puño
+        isPunchActive = false
+        if punchAnimTrack then
+            punchAnimTrack:Stop()
+            punchAnimTrack = nil
+        end
+        
+        if punchHitConnection then
+            punchHitConnection:Disconnect()
+            punchHitConnection = nil
+        end
+        
+        print("[Puño] ⚔️ Sistema de puño DESACTIVADO")
+        game:GetService("StarterGui"):SetCore("SendNotification", {
+            Title = "Sistema de Puño",
+            Text = "❌ Desactivado",
+            Duration = 2
+        })
+    else
+        -- Activar puño
+        isPunchActive = true
+        
+        punchHitConnection = UIS.InputBegan:Connect(function(input, gp)
+            if gp then return end
+            if isPunchActive and input.UserInputType == Enum.UserInputType.MouseButton1 then
+                performPunch()
+            end
+        end)
+        
+        print("[Puño] 👊 Sistema de puño ACTIVADO - Click izquierdo para golpear")
+        game:GetService("StarterGui"):SetCore("SendNotification", {
+            Title = "Sistema de Puño",
+            Text = "✅ Activado - Click izquierdo para golpear",
+            Duration = 3
+        })
+    end
+end
+
+--// ================= EFECTO ROJO SIMPLE =================
+local redGui = Instance.new("ScreenGui")
+redGui.Name = "RED_EFFECT_GUI"
+redGui.Parent = game:GetService("CoreGui")
+redGui.ResetOnSpawn = false
+
+local red = Instance.new("Frame")
+red.Parent = redGui
+red.Size = UDim2.fromScale(1, 1)
+red.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+red.BackgroundTransparency = 1
+
+--// ================= FUNCIONES PRINCIPALES =================
+local function playAnimation(id)
+	if not id then return end
+	if currentAnim then currentAnim:Stop() end
+	
+	local anim = Instance.new("Animation")
+	anim.AnimationId = "rbxassetid://" .. tostring(id)
+	currentAnim = humanoid:LoadAnimation(anim)
+	currentAnim:Play()
+end
+
+local function stopCurrentAnimation()
+	if currentAnim then
+		currentAnim:Stop()
+		currentAnim = nil
+	end
+end
+
+local function playDashSound(id, volume)
+	if not id then return end
+	
+	local sound = Instance.new("Sound")
+	sound.SoundId = "rbxassetid://" .. tostring(id)
+	sound.Volume = volume or 1
+	sound.Parent = root
+	sound:Play()
+	
+	game:GetService("Debris"):AddItem(sound, 2)
+end
+
+local function playFuryMusic()
+    if furyMusic then
+        furyMusic:Stop()
+        furyMusic:Destroy()
+        furyMusic = nil
+    end
+    
+    stopVisualizer()
+    furyMusic = loadAndPlayCustomMusic()
+end
+
+--// ================= DASH =================
+local function Dash(direction, animId)
+	if not canDash then return end
+	canDash = false
+
+	playDashSound(DASH_SOUND_ID, DASH_VOLUME)
+	local voiceId = VOICE_SOUNDS[math.random(1, #VOICE_SOUNDS)]
+	playDashSound(voiceId, VOICE_VOLUME)
+
+	playAnimation(animId)
+
+	local bv = Instance.new("BodyVelocity")
+	bv.MaxForce = Vector3.new(1e6,0,1e6)
+	bv.Velocity = direction * DASH_FORCE
+	bv.Parent = root
+
+	task.wait(DASH_DURATION)
+	
+	stopCurrentAnimation()
+	bv:Destroy()
+	
+	if isFury then
+		humanoid.WalkSpeed = FURY_WALKSPEED
+	else
+		humanoid.WalkSpeed = NORMAL_WALKSPEED
+	end
+	
+	task.wait(DASH_COOLDOWN)
+	canDash = true
+end
+
+--// ================= FURIA COMPLETA =================
+local function activateFury()
+	if not furyReady or isFury then return end
+	furyReady = false
+	isFury = true
+
+	print("🔥🔥🔥 FURIA ACTIVADA CON VISUALIZADOR Y FOV DINÁMICO 🔥🔥🔥")
+	red.BackgroundTransparency = 0.5
+	playFuryMusic()
+	humanoid.WalkSpeed = FURY_WALKSPEED
+	
+	local originalDashDuration = DASH_DURATION
+	local originalDashCooldown = DASH_COOLDOWN
+	local originalDashForce = DASH_FORCE
+	
+	DASH_DURATION = FURY_DASH_DURATION
+	DASH_COOLDOWN = FURY_DASH_COOLDOWN
+	DASH_FORCE = FURY_DASH_FORCE
+
+	task.wait(FURY_TIME)
+	
+	stopCurrentAnimation()
+	stopFuryMusic()
+	red.BackgroundTransparency = 1
+	humanoid.WalkSpeed = NORMAL_WALKSPEED
+	
+	DASH_DURATION = originalDashDuration
+	DASH_COOLDOWN = originalDashCooldown
+	DASH_FORCE = originalDashForce
+
+	isFury = false
+	task.wait(FURY_COOLDOWN)
+	furyReady = true
+end
+
+--// ================= INPUT =================
+UIS.InputBegan:Connect(function(input, gp)
+	if gp then return end
+
+	if input.KeyCode == Enum.KeyCode.Q then
+		if UIS:IsKeyDown(Enum.KeyCode.A) then
+			Dash(-root.CFrame.RightVector, Animations.DashLeft)
+		elseif UIS:IsKeyDown(Enum.KeyCode.D) then
+			Dash(root.CFrame.RightVector, Animations.DashRight)
+		elseif UIS:IsKeyDown(Enum.KeyCode.W) then
+			Dash(root.CFrame.LookVector, Animations.DashForward)
+		elseif UIS:IsKeyDown(Enum.KeyCode.S) then
+			Dash(-root.CFrame.LookVector, Animations.DashBack)
+		end
+	end
+
+	if input.KeyCode == Enum.KeyCode.P then
+		activateFury()
+	end
+	
+	if input.KeyCode == Enum.KeyCode.T then
+		playTSound()
+	end
+	
+	if input.KeyCode == Enum.KeyCode.K then
+		activatePunch()
+	end
+end)
+
+--// ================= RESET AL MORIR =================
+humanoid.Died:Connect(function()
+	isFury = false
+	furyReady = true
+	canUseTSound = true
+	isPunchActive = false
+	red.BackgroundTransparency = 1
+	originalPosition = nil
+	
+	if punchHitConnection then
+		punchHitConnection:Disconnect()
+		punchHitConnection = nil
+	end
+	
+	if FOV_ENABLED and camera then
+		camera.FieldOfView = FOV_BASE
+		currentFOV = FOV_BASE
+		targetFOV = FOV_BASE
+	end
+	
+	stopCurrentAnimation()
+	stopFuryMusic()
+	humanoid.WalkSpeed = NORMAL_WALKSPEED
+	DASH_DURATION = 0.35
+	DASH_COOLDOWN = 1
+	DASH_FORCE = 80
+end)
+
+--// ================= RESPAWN =================
+player.CharacterAdded:Connect(function(newChar)
+	char = newChar
+	humanoid = newChar:WaitForChild("Humanoid")
+	root = newChar:WaitForChild("HumanoidRootPart")
+	
+	canDash = true
+	isFury = false
+	furyReady = true
+	canUseTSound = true
+	isPunchActive = false
+	red.BackgroundTransparency = 1
+	originalPosition = nil
+	
+	if punchHitConnection then
+		punchHitConnection:Disconnect()
+		punchHitConnection = nil
+	end
+	
+	stopFuryMusic()
+	
+	humanoid.WalkSpeed = 16
+	DASH_DURATION = 0.35
+	DASH_COOLDOWN = 1
+	DASH_FORCE = 80
+end)
+
+-- Inicializar FOV
+if camera then
+    camera.FieldOfView = FOV_BASE
+end
+
+-- Crear visualizador al inicio
+createMusicVisualizer()
+
+print("=" .. string.rep("=", 60))
+print("✅ SISTEMA COMPLETO CARGADO")
+print("🎵 VISUALIZADOR: 60 barras fullscreen conectadas al audio")
+print("🎥 FOV DINÁMICO: " .. FOV_BASE .. "° → " .. (FOV_BASE + FOV_MAX_INCREASE) .. "°")
+print("⚡ DASH: 4 direcciones (Q + WASD)")
+print("🔥 FURIA: 4:09 minutos con tu música personal")
+print("👊 SISTEMA DE PUÑO MEJORADO:")
+print("   • Tecla K: Activar/Desactivar")
+print("   • Click izquierdo: Golpear")
+print("   • Highlight rojo al objetivo")
+print("   • SONIDOS DE IMPACTO ALEATORIOS")
+print("   • CÁMARA SIN MOVIMIENTO (siempre en ti)")
+print("   • Fling avanzado con SkidFling")
+print("   • Regreso automático a posición original")
+print("🎯 TARGETS CONFIGURADOS: " .. table.concat(Targets, ", "))
+print("🔊 EXTRAS: Sonido con tecla T")
+print("🎮 CONTROLES:")
+print("   • Q + A = Dash izquierda")
+print("   • Q + D = Dash derecha")
+print("   • Q + W = Dash adelante")
+print("   • Q + S = Dash atrás")
+print("   • P = Activar Furia")
+print("   • T = Sonido único")
+print("   • K = Activar/Desactivar puño")
+print("   • Click izquierdo (con puño activado) = Golpear + Fling + Highlight")
+print("=" .. string.rep("=", 60))
